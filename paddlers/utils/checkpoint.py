@@ -78,7 +78,12 @@ det_pretrain_weights_dict = {
     'MaskRCNN_ResNet50_vd_fpn': ['COCO', 'IMAGENET'],
     'MaskRCNN_ResNet50_vd_ssld_fpn': ['COCO', 'IMAGENET'],
     'MaskRCNN_ResNet101_fpn': ['COCO', 'IMAGENET'],
-    'MaskRCNN_ResNet101_vd_fpn': ['COCO', 'IMAGENET']
+    'MaskRCNN_ResNet101_vd_fpn': ['COCO', 'IMAGENET'],
+    'FCOSR_ResNeXt50_32x4d': ['IMAGENET'],
+    'PPYOLOE_R_CSPResNet_l': ['IMAGENET'],
+    'PPYOLOE_R_CSPResNet_m': ['IMAGENET'],
+    'PPYOLOE_R_CSPResNet_s': ['IMAGENET'],
+    'PPYOLOE_R_CSPResNet_x': ['IMAGENET']
 }
 
 res_pretrain_weights_dict = {}
@@ -335,6 +340,16 @@ imagenet_weights = {
     'https://bj.bcebos.com/paddleseg/dygraph/hrnet_w18_ssld.tar.gz',
     'C2FNet_HRNet_W48_IMAGENET':
     'https://bj.bcebos.com/paddleseg/dygraph/hrnet_w48_ssld.tar.gz',
+    'FCOSR_ResNeXt50_32x4d_IMAGENET':
+    'https://paddledet.bj.bcebos.com/models/pretrained/ResNeXt50_32x4d_pretrained.pdparams',
+    'PPYOLOE_R_CSPResNet_l_IMAGENET':
+    'https://paddledet.bj.bcebos.com/models/pretrained/CSPResNetb_l_pretrained.pdparams',
+    'PPYOLOE_R_CSPResNet_m_IMAGENET':
+    'https://paddledet.bj.bcebos.com/models/pretrained/CSPResNetb_m_pretrained.pdparams',
+    'PPYOLOE_R_CSPResNet_s_IMAGENET':
+    'https://paddledet.bj.bcebos.com/models/pretrained/CSPResNetb_s_pretrained.pdparams',
+    'PPYOLOE_R_CSPResNet_x_IMAGENET':
+    'https://paddledet.bj.bcebos.com/models/pretrained/CSPResNetb_x_pretrained.pdparams',
 }
 
 pascalvoc_weights = {
@@ -506,6 +521,7 @@ def load_pretrain_weights(model, pretrain_weights=None, model_name=None):
         if os.path.exists(pretrain_weights):
             param_state_dict = paddle.load(pretrain_weights)
             model_state_dict = model.state_dict()
+
             # HACK: Fit for faster rcnn. Pretrain weights contain prefix of 'backbone'
             # while res5 module is located in bbox_head.head. Replace the prefix of
             # res5 with 'bbox_head.head' to load pretrain weights correctly.
@@ -563,5 +579,6 @@ def load_checkpoint(model,
         pretrain_weights=osp.join(checkpoint, 'model.pdparams'),
         model_name=model_name)
     if load_optim_state:
-        load_optimizer(
-            optimizer, state_dict_path=osp.join(checkpoint, "model.pdopt"))
+        optim_path = osp.join(checkpoint, 'model.pdopt')
+        if osp.exists(optim_path):
+            load_optimizer(optimizer, state_dict_path=optim_path)

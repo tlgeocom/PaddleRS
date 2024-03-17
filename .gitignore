@@ -129,8 +129,14 @@ dmypy.json
 # myvscode
 .vscode
 
+# myidea
+.idea
+
 # Pyre type checker
 .pyre/
 
+# Training output
 /tutorials/train/**/output/
 /log
+
+/playground/

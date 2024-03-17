@@ -17,13 +17,13 @@ import copy
 import os
 import os.path as osp
 import random
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 
 import numpy as np
 
 from .base import BaseDataset
 from paddlers.utils import logging, get_encoding, norm_path, is_pic
-from paddlers.transforms import DecodeImg, MixupImage
+from paddlers.transforms import DecodeImg, MixupImage, construct_sample_from_dict
 from paddlers.tools import YOLOAnchorCluster
 
 
@@ -34,17 +34,18 @@ class COCODetDataset(BaseDataset):
     Args:
         data_dir (str): Root directory of the dataset.
         image_dir (str): Directory that contains the images.
-        ann_path (str): Path to COCO annotations.
-        transforms (paddlers.transforms.Compose): Data preprocessing and data augmentation operators to apply.
+        anno_path (str): Path to COCO annotations.
+        transforms (paddlers.transforms.Compose|list): Data preprocessing and data augmentation operators to apply.
         label_list (str|None, optional): Path of the file that contains the category names. Defaults to None.
         num_workers (int|str, optional): Number of processes used for data loading. If `num_workers` is 'auto',
             the number of workers will be automatically determined according to the number of CPU cores: If 
-            there are more than 16 cores，8 workers will be used. Otherwise, the number of workers will be half 
+            there are more than 16 cores, 8 workers will be used. Otherwise, the number of workers will be half 
             the number of CPU cores. Defaults: 'auto'.
         shuffle (bool, optional): Whether to shuffle the samples. Defaults to False.
         allow_empty (bool, optional): Whether to add negative samples. Defaults to False.
         empty_ratio (float, optional): Ratio of negative samples. If `empty_ratio` is smaller than 0 or not less 
             than 1, keep all generated negative samples. Defaults to 1.0.
+        batch_transforms (paddlers.transforms.BatchCompose|list): Batch transformation operators to apply.
     """
 
     def __init__(self,
@@ -52,11 +53,12 @@ class COCODetDataset(BaseDataset):
                  image_dir,
                  anno_path,
                  transforms,
-                 label_list,
+                 label_list=None,
                  num_workers='auto',
                  shuffle=False,
                  allow_empty=False,
-                 empty_ratio=1.):
+                 empty_ratio=1.,
+                 batch_transforms=None):
         # matplotlib.use() must be called *before* pylab, matplotlib.pyplot,
         # or matplotlib.backends is imported for the first time.
         import matplotlib
@@ -64,7 +66,8 @@ class COCODetDataset(BaseDataset):
         from pycocotools.coco import COCO
 
         super(COCODetDataset, self).__init__(data_dir, label_list, transforms,
-                                             num_workers, shuffle)
+                                             num_workers, shuffle,
+                                             batch_transforms)
 
         self.data_fields = None
         self.num_max_boxes = 50
@@ -78,39 +81,36 @@ class COCODetDataset(BaseDataset):
                     self.num_max_boxes *= 2
                     break
 
-        self.batch_transforms = None
         self.allow_empty = allow_empty
         self.empty_ratio = empty_ratio
         self.file_list = list()
         neg_file_list = list()
         self.labels = list()
+        self.anno_path = anno_path
 
-        annotations = dict()
-        annotations['images'] = list()
-        annotations['categories'] = list()
-        annotations['annotations'] = list()
+        annotations = defaultdict(list)
 
         cname2cid = OrderedDict()
         label_id = 0
-        with open(label_list, 'r', encoding=get_encoding(label_list)) as f:
-            for line in f.readlines():
-                cname2cid[line.strip()] = label_id
-                label_id += 1
-                self.labels.append(line.strip())
+        if label_list:
+            with open(label_list, 'r', encoding=get_encoding(label_list)) as f:
+                for line in f.readlines():
+                    cname2cid[line.strip()] = label_id
+                    label_id += 1
+                    self.labels.append(line.strip())
 
-        for k, v in cname2cid.items():
-            annotations['categories'].append({
-                'supercategory': 'component',
-                'id': v + 1,
-                'name': k
-            })
+            for k, v in cname2cid.items():
+                annotations['categories'].append({
+                    'supercategory': 'component',
+                    'id': v + 1,
+                    'name': k
+                })
 
         anno_path = norm_path(os.path.join(self.data_dir, anno_path))
         image_dir = norm_path(os.path.join(self.data_dir, image_dir))
 
         assert anno_path.endswith('.json'), \
             'invalid coco annotation file: ' + anno_path
-        from pycocotools.coco import COCO
         coco = COCO(anno_path)
         img_ids = coco.getImgIds()
         img_ids.sort()
@@ -156,7 +156,8 @@ class COCODetDataset(BaseDataset):
             gt_classes = []
             gt_bboxs = []
             gt_scores = []
-            difficults = []
+            gt_poly = []
+            difficulties = []
 
             for inst in instances:
                 # Check gt bbox
@@ -183,12 +184,21 @@ class COCODetDataset(BaseDataset):
                         'area: {} x1: {}, y1: {}, x2: {}, y2: {}.'.format(
                             img_id, float(inst['area']), x1, y1, x2, y2))
 
+                if 'segmentation' in inst and inst['iscrowd']:
+                    gt_poly.append([0.0 for _ in range(8)])
+                elif 'segmentation' in inst and inst['segmentation']:
+                    if not np.array(
+                            inst['segmentation'],
+                            dtype=object).size > 0 and not self.allow_empty:
+                        continue
+                    else:
+                        gt_poly.append(inst['segmentation'])
+
                 is_crowds.append([inst['iscrowd']])
-                gt_classes.append([inst['category_id']])
+                gt_classes.append([catid2clsid[inst['category_id']]])
                 gt_bboxs.append(inst['clean_bbox'])
                 gt_scores.append([1.])
-                difficults.append([0])
-
+                difficulties.append(inst.get('difficult', 0.))
                 annotations['annotations'].append({
                     'iscrowd': inst['iscrowd'],
                     'image_id': int(inst['image_id']),
@@ -196,18 +206,21 @@ class COCODetDataset(BaseDataset):
                     'area': inst['area'],
                     'category_id': inst['category_id'],
                     'id': inst['id'],
-                    'difficult': 0
+                    'difficult': inst.get('difficult', 0.)
                 })
+                if gt_poly:
+                    annotations['annotations'][-1]['gt_poly'] = gt_poly[-1]
 
             label_info = {
                 'is_crowd': np.array(is_crowds),
                 'gt_class': np.array(gt_classes),
                 'gt_bbox': np.array(gt_bboxs).astype(np.float32),
                 'gt_score': np.array(gt_scores).astype(np.float32),
-                'difficult': np.array(difficults),
+                'difficult': np.array(difficulties),
+                'gt_poly': np.array(gt_poly),
             }
 
-            if label_info['gt_bbox'].size > 0:
+            if label_info['gt_bbox'].size > 0 or label_info['gt_poly'].size > 0:
                 self.file_list.append({ ** im_info, ** label_info})
                 annotations['images'].append({
                     'height': im_h,
@@ -243,7 +256,7 @@ class COCODetDataset(BaseDataset):
         self._epoch = 0
 
     def __getitem__(self, idx):
-        sample = copy.deepcopy(self.file_list[idx])
+        sample = construct_sample_from_dict(self.file_list[idx])
         if self.data_fields is not None:
             sample = {k: sample[k] for k in self.data_fields}
         if self.use_mix and (self.mixup_op.mixup_epoch == -1 or
@@ -253,18 +266,25 @@ class COCODetDataset(BaseDataset):
                 mix_pos = (mix_idx + idx) % self.num_samples
             else:
                 mix_pos = 0
-            sample_mix = copy.deepcopy(self.file_list[mix_pos])
+            sample_mix = construct_sample_from_dict(self.file_list[mix_pos])
             if self.data_fields is not None:
                 sample_mix = {k: sample_mix[k] for k in self.data_fields}
             sample = self.mixup_op(sample=[
                 DecodeImg(to_rgb=False)(sample),
                 DecodeImg(to_rgb=False)(sample_mix)
             ])
-        sample = self.transforms(sample)
-        return sample
+
+        sample['trans_info'] = []
+        sample, trans_info = self.transforms(sample)
+        return sample, trans_info
 
     def __len__(self):
         return self.num_samples
+
+    def get_anno_path(self):
+        if self.anno_path:
+            return norm_path(os.path.join(self.data_dir, self.anno_path))
+        return None
 
     def set_epoch(self, epoch_id):
         self._epoch = epoch_id

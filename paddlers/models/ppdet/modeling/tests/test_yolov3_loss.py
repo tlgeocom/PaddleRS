@@ -1,4 +1,4 @@
-#   Copyright (c) 2022 PaddlePaddle Authors. All Rights Reserved.
+#   Copyright (c) 2018 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ import unittest
 
 import paddle
 import paddle.nn.functional as F
-# add python path of PadleDetection to sys.path
+# add python path of PaddleDetection to sys.path
 import os
 import sys
 parent_path = os.path.abspath(os.path.join(__file__, *(['..'] * 4)))

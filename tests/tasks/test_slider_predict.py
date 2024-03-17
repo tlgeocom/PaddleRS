@@ -151,6 +151,21 @@ class _TestSliderPredictNamespace:
                     decode_sar=False)
                 self.check_output_equal(pred_accum.shape, pred_whole.shape)
 
+                # 'swell'
+                save_dir = osp.join(td, 'swell')
+                self.model.slider_predict(
+                    self.image_path,
+                    save_dir,
+                    128,
+                    64,
+                    self.transforms,
+                    merge_strategy='swell')
+                pred_swell = T.decode_image(
+                    osp.join(save_dir, self.basename),
+                    read_raw=True,
+                    decode_sar=False)
+                self.check_output_equal(pred_swell.shape, pred_whole.shape)
+
         def test_geo_info(self):
             with tempfile.TemporaryDirectory() as td:
                 _, geo_info_in = T.decode_image(
@@ -198,7 +213,7 @@ class _TestSliderPredictNamespace:
                 self.check_output_equal(pred_bs4, pred_bs1)
 
                 # batch_size = 8
-                save_dir = osp.join(td, 'bs4')
+                save_dir = osp.join(td, 'bs8')
                 self.model.slider_predict(
                     self.image_path,
                     save_dir,
@@ -217,10 +232,7 @@ class _TestSliderPredictNamespace:
 class TestSegSliderPredict(_TestSliderPredictNamespace.TestSliderPredict):
     def setUp(self):
         self.model = pdrs.tasks.seg.UNet(in_channels=10)
-        self.transforms = T.Compose([
-            T.DecodeImg(), T.Normalize([0.5] * 10, [0.5] * 10),
-            T.ArrangeSegmenter('test')
-        ])
+        self.transforms = T.Compose([T.Normalize([0.5] * 10, [0.5] * 10)])
         self.image_path = "data/ssst/multispectral.tif"
         self.ref_path = self.image_path
         self.basename = osp.basename(self.ref_path)
@@ -229,10 +241,7 @@ class TestSegSliderPredict(_TestSliderPredictNamespace.TestSliderPredict):
 class TestCDSliderPredict(_TestSliderPredictNamespace.TestSliderPredict):
     def setUp(self):
         self.model = pdrs.tasks.cd.BIT(in_channels=10)
-        self.transforms = T.Compose([
-            T.DecodeImg(), T.Normalize([0.5] * 10, [0.5] * 10),
-            T.ArrangeChangeDetector('test')
-        ])
+        self.transforms = T.Compose([T.Normalize([0.5] * 10, [0.5] * 10)])
         self.image_path = ("data/ssmt/multispectral_t1.tif",
                            "data/ssmt/multispectral_t2.tif")
         self.ref_path = self.image_path[0]
