@@ -21,8 +21,8 @@ EXP_DIR = './output/deeplabv3p_rgb/'
 NUM_BANDS = 3
 
 # 下载和解压多光谱地块分类数据集
-pdrs.utils.download_and_decompress(
-    'https://paddlers.bj.bcebos.com/datasets/rsseg_rgb.zip', path='./data/')
+#pdrs.utils.download_and_decompress(
+#    'https://paddlers.bj.bcebos.com/datasets/rsseg_rgb.zip', path='./data/')
 
 # 定义训练和验证时使用的数据变换（数据增强、预处理等）
 # 使用Compose组合多种变换方式。Compose中包含的变换将按顺序串行执行
@@ -79,7 +79,7 @@ model = pdrs.tasks.seg.DeepLabV3P(
 model.train(
     num_epochs=10,
     train_dataset=train_dataset,
-    train_batch_size=4,
+    train_batch_size=2,
     eval_dataset=eval_dataset,
     save_interval_epochs=5,
     # 每多少次迭代记录一次日志
